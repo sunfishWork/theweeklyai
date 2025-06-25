@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 import ollama
 
 # RSS 피드 URL
-RSS_URL = "https://spectrum.ieee.org/rss"
+RSS_URL = "https://spectrum.ieee.org/customfeeds/feed/all-topics/rss"
 
 
 def clean_html_content(html_content):
@@ -57,6 +57,20 @@ def generate_summary_and_translations(text, title):
     return english_summary, korean_title, korean_summary
 
 
+def fetch_webpage_content(url):
+    """웹페이지 콘텐츠를 가져옴"""
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        return response.text
+    except requests.RequestException as e:
+        print(f"Error fetching webpage {url}: {e}")
+        return ""
+
+
 def process_rss_feed():
     """RSS 피드를 처리하고 요약, 번역, 이미지 URL 생성"""
     # RSS 피드 파싱
@@ -68,27 +82,40 @@ def process_rss_feed():
     days_to_last_monday = today.weekday() + 7
     last_monday = today - timedelta(days=days_to_last_monday)
     last_sunday = last_monday + timedelta(days=6)
+    print(f"last monday: {last_monday}")
+    print(f"last sunday: {last_sunday}")
 
     for entry in feed.entries:
         title = entry.get("title", "")
         link = entry.get("link", "")
-        description = entry.get("description", "")
         published = entry.get("published", "")
 
         # published 날짜를 파싱
         try:
             published_date = datetime.strptime(published, "%a, %d %b %Y %H:%M:%S %z")
             published_date = published_date.replace(tzinfo=None)  # 시간대 정보 제거
+            print(f"published date: {published_date}")
         except ValueError:
             continue  # 날짜 파싱 실패 시 해당 항목 스킵
 
         # 지난 주 월요일부터 일요일까지의 콘텐츠만 처리
         if last_monday.date() <= published_date.date() <= last_sunday.date():
+            # 웹페이지 콘텐츠 가져오기
+            webpage_content = fetch_webpage_content(link)
+            if not webpage_content:
+                print(f"Skipping entry '{title}' due to failed webpage fetch")
+                continue
+            # print(f"webpage content: {webpage_content}")
+
             # 대표 이미지 추출
-            image = extract_image(description)
+            image = extract_image(webpage_content)
 
             # 텍스트 콘텐츠 정제
-            clean_description = clean_html_content(description)
+            clean_description = clean_html_content(webpage_content)
+            print(f"cleaned description: {clean_description}")
+            if not clean_description:
+                print(f"Skipping entry '{title}' due to empty content")
+                continue
 
             # 요약 및 번역 생성
             try:
