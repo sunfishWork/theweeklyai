@@ -4,9 +4,55 @@ import json
 from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 import ollama
+from dateutil.parser import parse as parse_date
 
-# RSS 피드 URL
-RSS_URL = "https://spectrum.ieee.org/customfeeds/feed/all-topics/rss"
+# RSS 피드 URL 리스트
+RSS_URLS = [
+    # Arxiv
+
+    # IEEE Spectrum
+    "https://spectrum.ieee.org/customfeeds/feed/all-topics/rss",
+
+    # MIT Tech review
+    # "https://www.technologyreview.com/feed/", # 최신만
+
+    # Meta ai
+
+    # Nvidia ai
+    "https://feeds.feedburner.com/nvidiablog",
+
+    # Google ai
+    "https://blog.google/technology/ai/rss/",
+
+    # Ms ai
+
+    # Visualcapitalist
+    "https://feeds.feedburner.com/visualcapitalist",    # 일주일 정도
+
+    # Venturebeat
+    "https://feeds.feedburner.com/venturebeat/SZYF",    # 일주일 정도
+
+    # At&t news
+
+    # Telus newsroom
+
+    # Bain & Company
+
+    # Boston consulting group
+
+    # NEW
+    "https://feeds.arstechnica.com/arstechnica/technology-lab", #한달 정도 피드 제공
+    "https://www.wired.com/feed/tag/ai/latest/rss", # 2주 정도 피드 제공
+    "https://www.mckinsey.com/insights/rss", # 2주 정도 피드 제공
+    "https://www.lightreading.com/rss.xml", # 2주 정도 피드 제공
+    "https://cloudblog.withgoogle.com/rss/", # 10일 정도
+
+    # "https://techcrunch.com/feed/", # 최신 피드만 제공
+    # "https://www.theverge.com/rss/index.xml",   # 최신 피드만 제공
+    # "https://www.rcrwireless.com/feed", #최신 피드만 제공
+
+
+]
 
 
 def clean_html_content(html_content):
@@ -19,12 +65,9 @@ def extract_image(html_content):
     """HTML 콘텐츠에서 대표 이미지 URL 추출"""
     soup = BeautifulSoup(html_content, "html.parser")
     img_tag = soup.find("img")
-
     if img_tag and img_tag.get("src"):
         img_url = img_tag["src"]
-        # 광고 이미지 필터링
-        if "ad" not in img_url.lower() and "advertisement" not in img_url.lower() and "banner" not in img_url.lower():
-            return img_url
+        return img_url
     return ""
 
 
@@ -34,6 +77,7 @@ def generate_summary_and_translations(text, title):
     summary_prompt = f"""
     Summarize the following text in 4 paragraphs, each approximately 80 words, in English. 
     Additionally, include two separate paragraphs analyzing the impact on the AI industry and the Telecommunication industry, each approximately 80 words.
+    Subtitle "Impact on the AI industry: " and "Impact on the Telecommunication industry: " must included.
     Start the response directly. 
     Structure the response as follows:
 
@@ -90,10 +134,10 @@ def fetch_webpage_content(url):
         return ""
 
 
-def process_rss_feed():
-    """RSS 피드를 처리하고 요약, 번역, 이미지 URL 생성"""
+def process_rss_feed(rss_url):
+    """단일 RSS 피드를 처리하고 요약, 번역, 이미지 URL 생성"""
     # RSS 피드 파싱
-    feed = feedparser.parse(RSS_URL)
+    feed = feedparser.parse(rss_url)
     results = []
 
     # 오늘 날짜 기준으로 지난 주 월요일부터 일요일까지의 날짜 범위 계산
@@ -101,21 +145,23 @@ def process_rss_feed():
     days_to_last_monday = today.weekday() + 7
     last_monday = today - timedelta(days=days_to_last_monday)
     last_sunday = last_monday + timedelta(days=6)
-    print(f"last monday: {last_monday}")
-    print(f"last sunday: {last_sunday}")
+    print(f"Processing RSS: {rss_url}")
+    print(f"Last Monday: {last_monday}")
+    print(f"Last Sunday: {last_sunday}")
 
     for entry in feed.entries:
         title = entry.get("title", "")
         link = entry.get("link", "")
-        published = entry.get("published", "")
+        published = entry.get("published", entry.get("pubDate", ""))
 
         # published 날짜를 파싱
         try:
-            published_date = datetime.strptime(published, "%a, %d %b %Y %H:%M:%S %z")
+            published_date = parse_date(published)
             published_date = published_date.replace(tzinfo=None)  # 시간대 정보 제거
-            print(f"published date: {published_date}")
-        except ValueError:
-            continue  # 날짜 파싱 실패 시 해당 항목 스킵
+            print(f"Published date: {published_date}")
+        except (ValueError, TypeError):
+            print(f"Skipping entry '{title}' due to invalid date format")
+            continue
 
         # 지난 주 월요일부터 일요일까지의 콘텐츠만 처리
         if last_monday.date() <= published_date.date() <= last_sunday.date():
@@ -124,7 +170,6 @@ def process_rss_feed():
             if not webpage_content:
                 print(f"Skipping entry '{title}' due to failed webpage fetch")
                 continue
-            # print(f"webpage content: {webpage_content}")
 
             # 대표 이미지 추출
             image = extract_image(webpage_content)
@@ -136,28 +181,41 @@ def process_rss_feed():
                 print(f"Skipping entry '{title}' due to empty content")
                 continue
 
-            # 요약 및 번역 생성
-            try:
-                english_summary, korean_title, korean_summary = generate_summary_and_translations(clean_description,
-                                                                                                  title)
-            except Exception as e:
-                print(f"Error processing entry '{title}': {e}")
-                continue
+            debug = False
+            if not debug:
+                # 요약 및 번역 생성
+                try:
+                    english_summary, korean_title, korean_summary = generate_summary_and_translations(clean_description, title)
+                except Exception as e:
+                    print(f"Error processing entry '{title}': {e}")
+                    continue
 
-            # 결과 데이터 구조
-            result = {
-                "link": link,
-                "image": image,
-                "published": published,
-                "eng_title": title,  # 영문 제목
-                "eng_summary": english_summary,
-                "title": korean_title,
-                "summary": korean_summary
-            }
-            results.append(result)
-            break
+                # 결과 데이터 구조
+                result = {
+                    "rss_source": rss_url,
+                    "link": link,
+                    "image": image,
+                    "published": published,
+                    "eng_title": title,
+                    "eng_summary": english_summary,
+                    "title": korean_title,
+                    "summary": korean_summary
+                }
+                results.append(result)
 
     return results
+
+
+def process_multiple_rss_feeds(rss_urls):
+    """여러 RSS 피드를 처리"""
+    all_results = []
+    for rss_url in rss_urls:
+        try:
+            results = process_rss_feed(rss_url)
+            all_results.extend(results)
+        except Exception as e:
+            print(f"Error processing RSS feed {rss_url}: {e}")
+    return all_results
 
 
 def save_to_json(data, filename="summaries.json"):
@@ -168,8 +226,8 @@ def save_to_json(data, filename="summaries.json"):
 
 def main():
     try:
-        # RSS 피드 처리
-        results = process_rss_feed()
+        # 여러 RSS 피드 처리
+        results = process_multiple_rss_feeds(RSS_URLS)
 
         # JSON 파일로 저장
         save_to_json(results)
