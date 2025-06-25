@@ -1,7 +1,7 @@
 import feedparser
 import requests
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 import ollama
 
@@ -63,36 +63,51 @@ def process_rss_feed():
     feed = feedparser.parse(RSS_URL)
     results = []
 
-    for entry in feed.entries[:5]:  # 최신 5개 항목만 처리
+    # 오늘 날짜 기준으로 지난 주 월요일부터 일요일까지의 날짜 범위 계산
+    today = datetime.now()
+    days_to_last_monday = today.weekday() + 7
+    last_monday = today - timedelta(days=days_to_last_monday)
+    last_sunday = last_monday + timedelta(days=6)
+
+    for entry in feed.entries:
         title = entry.get("title", "")
         link = entry.get("link", "")
         description = entry.get("description", "")
         published = entry.get("published", "")
 
-        # 대표 이미지 추출
-        image = extract_image(description)
-
-        # 텍스트 콘텐츠 정제
-        clean_description = clean_html_content(description)
-
-        # 요약 및 번역 생성
+        # published 날짜를 파싱
         try:
-            english_summary, korean_title, korean_summary = generate_summary_and_translations(clean_description, title)
-        except Exception as e:
-            print(f"Error processing entry '{title}': {e}")
-            continue
+            published_date = datetime.strptime(published, "%a, %d %b %Y %H:%M:%S %z")
+            published_date = published_date.replace(tzinfo=None)  # 시간대 정보 제거
+        except ValueError:
+            continue  # 날짜 파싱 실패 시 해당 항목 스킵
 
-        # 결과 데이터 구조
-        result = {
-            "link": link,
-            "image": image,
-            "published": published,
-            "title": title,  # 영문 제목
-            "summary": english_summary,
-            "korean_title": korean_title,
-            "korean_summary": korean_summary
-        }
-        results.append(result)
+        # 지난 주 월요일부터 일요일까지의 콘텐츠만 처리
+        if last_monday.date() <= published_date.date() <= last_sunday.date():
+            # 대표 이미지 추출
+            image = extract_image(description)
+
+            # 텍스트 콘텐츠 정제
+            clean_description = clean_html_content(description)
+
+            # 요약 및 번역 생성
+            try:
+                english_summary, korean_title, korean_summary = generate_summary_and_translations(clean_description, title)
+            except Exception as e:
+                print(f"Error processing entry '{title}': {e}")
+                continue
+
+            # 결과 데이터 구조
+            result = {
+                "link": link,
+                "image": image,
+                "published": published,
+                "title": title,  # 영문 제목
+                "summary": english_summary,
+                "korean_title": korean_title,
+                "korean_summary": korean_summary
+            }
+            results.append(result)
 
     return results
 
