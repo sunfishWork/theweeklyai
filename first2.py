@@ -31,7 +31,20 @@ def extract_image(html_content):
 def generate_summary_and_translations(text, title):
     """Ollama를 사용해 영문 요약, 한글 제목, 한글 요약 생성"""
     # 영문 요약 생성 프롬프트
-    summary_prompt = f"Summarize the following text in 2-3 sentences in English:\n\n{text}"
+    summary_prompt = f"""
+    Summarize the following text in 4 paragraphs, each approximately 80 words, in English. 
+    Additionally, include two separate paragraphs analyzing the impact on the AI industry and the Telecommunication industry, each approximately 80 words.
+    Start the response directly. 
+    Structure the response as follows:
+
+    First paragraph:
+    Second paragraph:
+    Third paragraph:
+    Fourth paragraph:
+    Impact on the AI industry:
+    Impact on the Telecommunication industry:
+
+    {text}"""
     summary_response = ollama.chat(
         model="llama3.2:3b",
         messages=[{"role": "user", "content": summary_prompt}]
@@ -39,7 +52,10 @@ def generate_summary_and_translations(text, title):
     english_summary = summary_response["message"]["content"].strip()
 
     # 한글 제목 생성 프롬프트
-    title_translation_prompt = f"Translate the following English title into Korean:\n\n{title}"
+    title_translation_prompt = f"""
+    Translate the following English title into Korean:
+    Start the response directly. 
+    \n\n{title}"""
     title_response = ollama.chat(
         model="llama3.2:3b",
         messages=[{"role": "user", "content": title_translation_prompt}]
@@ -47,7 +63,10 @@ def generate_summary_and_translations(text, title):
     korean_title = title_response["message"]["content"].strip()
 
     # 한글 요약 생성 프롬프트
-    summary_translation_prompt = f"Translate the following English summary into Korean:\n\n{english_summary}"
+    summary_translation_prompt = f"""
+    Translate the following English summary into Korean:
+    Start the response directly.
+    \n\n{english_summary}"""
     summary_translation_response = ollama.chat(
         model="llama3.2:3b",
         messages=[{"role": "user", "content": summary_translation_prompt}]
@@ -119,7 +138,8 @@ def process_rss_feed():
 
             # 요약 및 번역 생성
             try:
-                english_summary, korean_title, korean_summary = generate_summary_and_translations(clean_description, title)
+                english_summary, korean_title, korean_summary = generate_summary_and_translations(clean_description,
+                                                                                                  title)
             except Exception as e:
                 print(f"Error processing entry '{title}': {e}")
                 continue
@@ -129,12 +149,13 @@ def process_rss_feed():
                 "link": link,
                 "image": image,
                 "published": published,
-                "title": title,  # 영문 제목
-                "summary": english_summary,
-                "korean_title": korean_title,
-                "korean_summary": korean_summary
+                "eng_title": title,  # 영문 제목
+                "eng_summary": english_summary,
+                "title": korean_title,
+                "summary": korean_summary
             }
             results.append(result)
+            break
 
     return results
 
